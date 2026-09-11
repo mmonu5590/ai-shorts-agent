@@ -111,6 +111,7 @@ export const jobKeys = {
   root: (jobId: string) => `jobs/${jobId}`,
   source: (jobId: string, extension: string) => `jobs/${jobId}/source.${extension}`,
   audio: (jobId: string) => `jobs/${jobId}/audio.wav`,
+  metadata: (jobId: string) => `jobs/${jobId}/metadata.json`,
   transcript: (jobId: string) => `jobs/${jobId}/transcript.json`,
   editPlan: (jobId: string) => `jobs/${jobId}/edit-plan.json`,
   shorts: (jobId: string) => `jobs/${jobId}/shorts`,
