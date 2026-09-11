@@ -10,11 +10,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test --experimental-strip-types"
+    "test": "node --test --experimental-strip-types",
+    "start": "node dist/api/index.js",
+    "dev": "node --experimental-strip-types --watch src/api/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "google-auth-library": "^9.15.0",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

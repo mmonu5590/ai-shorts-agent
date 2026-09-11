@@ -19,6 +19,9 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 - Ingest stage: upload validation, ffprobe metadata, audio extraction
 - Validated edit plan schema (the AI/FFmpeg contract)
 - Deterministic 9:16 rendering with crop or pad framing
+- Job orchestration with per-stage status
+- HTTP API with range-request playback
+- Mobile web starter
 - 9:16 rendering
 - API job status
 - Mobile web starter
@@ -27,8 +30,8 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 
 Add real transcription/LLM/TTS providers, Redis queue, Supabase auth/database, face tracking, captions, audio isolation, AI narration, B-roll, billing and publishing.
 
-Built so far: [storage](docs/storage.md), [ingest](docs/ingest.md), and
-[edit plans and rendering](docs/editing.md).
+Docs: [the pipeline](docs/pipeline.md), [storage](docs/storage.md),
+[ingest](docs/ingest.md), [edit plans and rendering](docs/editing.md).
 
 ## Important Notes
 
@@ -41,8 +44,13 @@ Built so far: [storage](docs/storage.md), [ingest](docs/ingest.md), and
 ```bash
 npm install
 cp .env.example .env
-npm test
+npm run dev          # http://localhost:3000
 ```
+
+Out of the box: local-filesystem storage, the stub transcriber, and the
+heuristic selector — no credentials and no network. Upload a video from the web
+client and rendered Shorts come back. See [docs/pipeline.md](docs/pipeline.md)
+to plug in real providers.
 
 Storage defaults to the local filesystem, so nothing else is needed to run the
 test suite. To use Google Drive as the backing store, follow
@@ -64,6 +72,8 @@ Tests that need them skip when they are absent, so `npm test` passes either way
 
 | Command | Purpose |
 | --- | --- |
+| `npm run dev` | Run the server with reload |
+| `npm start` | Run the built server |
 | `npm test` | Run the test suite |
 | `npm run typecheck` | Typecheck without emitting |
 | `npm run build` | Compile to `dist/` |

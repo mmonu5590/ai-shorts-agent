@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AI Shorts Agent</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --surface: #191d25;
+        --border: #2a303b;
+        --text: #e7eaf0;
+        --muted: #949cab;
+        --accent: #5b8cff;
+        --danger: #ff6b6b;
+        --ok: #43c59e;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { max-width: 560px; margin: 0 auto; }
+      h1 { font-size: 1.4rem; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 24px; font-size: 0.9rem; }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      label.file {
+        display: block;
+        border: 1.5px dashed var(--border);
+        border-radius: 12px;
+        padding: 28px 16px;
+        text-align: center;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      label.file:focus-within { border-color: var(--accent); color: var(--text); }
+      input[type="file"] { position: absolute; opacity: 0; width: 0; height: 0; }
+      button {
+        width: 100%;
+        padding: 14px;
+        margin-top: 12px;
+        font: inherit;
+        font-weight: 600;
+        color: #0b0d11;
+        background: var(--accent);
+        border: 0;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      .stages { list-style: none; margin: 0; padding: 0; }
+      .stages li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .stages li[data-state="active"] { color: var(--text); font-weight: 600; }
+      .stages li[data-state="done"] { color: var(--ok); }
+      .dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        background: var(--border); flex: none;
+      }
+      li[data-state="active"] .dot { background: var(--accent); }
+      li[data-state="done"] .dot { background: var(--ok); }
+      .bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+      .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+      .error { color: var(--danger); font-size: 0.9rem; margin: 8px 0 0; }
+      .shorts { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      .shorts figure { margin: 0; }
+      .shorts video { width: 100%; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; }
+      .shorts figcaption { font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>AI Shorts Agent</h1>
+      <p class="sub">Upload a long video. Get vertical Shorts back.</p>
+
+      <section class="card">
+        <label class="file">
+          <input type="file" id="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv" />
+          <span id="fileLabel">Tap to choose a video</span>
+        </label>
+        <button id="upload" disabled>Upload</button>
+        <p class="error" id="error" hidden></p>
+      </section>
+
+      <section class="card" id="progress" hidden>
+        <ul class="stages" id="stages"></ul>
+        <div class="bar"><i id="bar"></i></div>
+      </section>
+
+      <section class="card" id="results" hidden>
+        <div class="shorts" id="shorts"></div>
+      </section>
+    </main>
+
+    <script type="module">
+      const STAGES = [
+        ["ingesting", "Reading video"],
+        ["transcribing", "Transcribing audio"],
+        ["selecting", "Choosing moments"],
+        ["rendering", "Rendering Shorts"],
+      ];
+
+      const el = (id) => document.getElementById(id);
+      const fileInput = el("file");
+      const uploadButton = el("upload");
+      const errorBox = el("error");
+
+      let chosen = null;
+
+      fileInput.addEventListener("change", () => {
+        chosen = fileInput.files?.[0] ?? null;
+        el("fileLabel").textContent = chosen ? chosen.name : "Tap to choose a video";
+        uploadButton.disabled = !chosen;
+      });
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.hidden = false;
+      }
+
+      function renderStages(status, progress) {
+        const reached = STAGES.findIndex(([key]) => key === status);
+        const complete = status === "complete";
+        el("stages").replaceChildren(
+          ...STAGES.map(([key, label], index) => {
+            const li = document.createElement("li");
+            const state = complete || (reached > -1 && index < reached) ? "done" : key === status ? "active" : "todo";
+            li.dataset.state = state;
+            const dot = document.createElement("span");
+            dot.className = "dot";
+            li.append(dot, document.createTextNode(label));
+            return li;
+          }),
+        );
+
+        const fraction = complete
+          ? 1
+          : progress && progress.total > 0
+            ? (reached + progress.completed / progress.total) / STAGES.length
+            : reached > -1
+              ? reached / STAGES.length
+              : 0;
+        el("bar").style.width = `${Math.round(fraction * 100)}%`;
+      }
+
+      function renderShorts(job) {
+        el("results").hidden = false;
+        el("shorts").replaceChildren(
+          ...(job.shorts ?? []).map((short) => {
+            const figure = document.createElement("figure");
+            const video = document.createElement("video");
+            video.src = `/api/jobs/${job.id}/shorts/${short.index}`;
+            video.controls = true;
+            video.preload = "metadata";
+            video.playsInline = true;
+            const caption = document.createElement("figcaption");
+            const clip = job.plan?.clips?.find((candidate) => candidate.id === short.clipId);
+            caption.textContent = clip?.title ?? `Clip ${short.index} · ${short.durationSeconds.toFixed(0)}s`;
+            figure.append(video, caption);
+            return figure;
+          }),
+        );
+      }
+
+      async function poll(jobId) {
+        // Polling rather than a socket: the pipeline reports at stage
+        // granularity, so a second of latency is invisible to the user.
+        for (;;) {
+          const response = await fetch(`/api/jobs/${jobId}`);
+          if (!response.ok) throw new Error(`Status check failed (${response.status})`);
+          const job = await response.json();
+
+          renderStages(job.status, job.progress);
+          if (job.status === "complete") return renderShorts(job);
+          if (job.status === "failed") throw new Error(job.error ?? "The job failed");
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      uploadButton.addEventListener("click", async () => {
+        if (!chosen) return;
+        errorBox.hidden = true;
+        uploadButton.disabled = true;
+        el("progress").hidden = false;
+        el("results").hidden = true;
+        renderStages("ingesting");
+
+        try {
+          const response = await fetch(`/api/jobs?filename=${encodeURIComponent(chosen.name)}`, {
+            method: "POST",
+            body: chosen,
+          });
+          const job = await response.json();
+          if (!response.ok) throw new Error(job.error ?? `Upload failed (${response.status})`);
+          await poll(job.id);
+        } catch (error) {
+          showError(error instanceof Error ? error.message : String(error));
+        } finally {
+          uploadButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
