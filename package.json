@@ -1,0 +1,23 @@
+{
+  "name": "ai-shorts-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile-friendly AI video repurposing prototype",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.15.0",
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
