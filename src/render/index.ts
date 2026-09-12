@@ -25,8 +25,10 @@ import {
   clipCues,
   toSrt,
 } from "./captions.ts";
+import { type AudioProcessing, DEFAULT_AUDIO } from "./audio.ts";
 import { buildClipArgs } from "./filters.ts";
 
+export * from "./audio.ts";
 export * from "./captions.ts";
 export { buildClipArgs, buildVerticalFilter } from "./filters.ts";
 
@@ -49,6 +51,8 @@ export interface RenderClipOptions {
   /** Path to an SRT file to burn into the frame. */
   subtitlesPath?: string;
   captionStyle?: CaptionStyle;
+  /** Audio conditioning. Defaults to {@link DEFAULT_AUDIO}; pass null to skip. */
+  audio?: AudioProcessing | null;
 }
 
 /** Renders one clip from a local source file to a local output file. */
@@ -74,6 +78,7 @@ export async function renderClip(options: RenderClipOptions): Promise<void> {
       framing: clip.framing,
       spec,
       overlayFilter,
+      audio: options.audio === null ? undefined : (options.audio ?? DEFAULT_AUDIO),
     }),
   );
 
@@ -121,6 +126,8 @@ export interface RenderPlanOptions {
   /** Source of caption text. Captions are skipped without it. */
   transcript?: Transcript;
   captions?: CaptionSettings;
+  /** Audio conditioning for every clip. Pass null to leave audio untouched. */
+  audio?: AudioProcessing | null;
 }
 
 export interface RenderPlanResult {
@@ -169,6 +176,7 @@ export async function renderPlan(options: RenderPlanOptions): Promise<RenderPlan
         spec,
         ...(subtitlesPath ? { subtitlesPath } : {}),
         ...(options.captions?.style ? { captionStyle: options.captions.style } : {}),
+        ...(options.audio === undefined ? {} : { audio: options.audio }),
       });
 
       const key = jobKeys.short(plan.jobId, index + 1);

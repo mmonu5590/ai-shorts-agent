@@ -155,3 +155,40 @@ ffmpeg accepting a filter is not evidence that anything was drawn. The test
 renders the same clip with and without captions, decodes one frame of each as
 grayscale, and compares them pixel by pixel: the bottom band must change, and
 the upper half must be byte-identical.
+
+## Audio
+
+Source videos arrive at wildly different levels — a phone recording and a
+studio podcast sit 20 dB apart — and a Short that plays quiet after a loud one
+gets skipped. Every clip is normalised to **-14 LUFS integrated**, which is
+what the major short-form platforms normalise toward, so their own gain stage
+is close to a no-op and the viewer hears the mix that was made.
+
+```ts
+await renderPlan({ plan, storage, sourceKey, audio: { ...DEFAULT_AUDIO, denoise: true } });
+await renderPlan({ plan, storage, sourceKey, audio: null }); // leave audio alone
+```
+
+Denoise (`afftdn`) runs **before** normalisation. Measuring loudness over the
+noise floor lets hiss pull the reading up, and normalisation then undershoots
+the target by however loud the noise was. It is off by default, because
+spectral denoise on already-clean speech does more harm than good.
+
+### loudnorm emits 192 kHz
+
+`loudnorm` resamples internally and outputs at 192 kHz. AAC tops out at 96 kHz,
+so the encode fails on the way out unless the chain ends in `aresample`. It
+always does, and a test asserts the rendered file really is 48 kHz AAC.
+
+### Measuring it, and one trap in doing so
+
+The test renders a deliberately quiet source with and without normalisation and
+measures both with ffmpeg's EBU R128 meter, asserting the output lands within
+1.5 LU of the target.
+
+Reading that meter needs care: `ebur128` prints a running `I:` on **every**
+progress line, and the first reads `-70.0` before it has measured anything.
+Matching the first `I:` in stderr reports silence for every file — which is
+exactly what the first version of this test did, and it would have passed
+happily against a filter chain that did nothing. The helper parses the
+`Integrated loudness:` summary block the filter prints at the end.

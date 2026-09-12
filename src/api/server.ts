@@ -166,10 +166,13 @@ function serveIndex(response: http.ServerResponse): void {
 export function createApiServer(deps: ApiDependencies): http.Server {
   return http.createServer((request, response) => {
     void (async () => {
-      const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-      const segments = url.pathname.split("/").filter(Boolean);
-
       try {
+        // Parsed inside the boundary: a Host header the URL parser rejects
+        // would otherwise reject outside any catch, and an unhandled rejection
+        // in this fire-and-forget handler takes the process down.
+        const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+        const segments = url.pathname.split("/").filter(Boolean);
+
         if (request.method === "GET" && segments.length === 0) {
           serveIndex(response);
           return;

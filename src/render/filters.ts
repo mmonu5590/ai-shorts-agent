@@ -7,6 +7,7 @@
  */
 
 import { type Framing, type OutputSpec, DEFAULT_FRAMING } from "../plan/types.ts";
+import { type AudioProcessing, buildAudioFilter } from "./audio.ts";
 
 /** Formats a number for an ffmpeg expression, avoiding exponent notation. */
 function num(value: number): string {
@@ -73,11 +74,14 @@ export function buildClipArgs(options: {
    * the scale would be resampled along with the picture.
    */
   overlayFilter?: string | undefined;
+  /** Audio conditioning. Omit to pass the source audio through untouched. */
+  audio?: AudioProcessing | undefined;
 }): string[] {
   const { inputPath, outputPath, start, duration, framing, spec } = options;
   const videoFilter = [buildVerticalFilter(framing, spec), options.overlayFilter]
     .filter((part): part is string => Boolean(part))
     .join(",");
+  const audioFilter = buildAudioFilter(options.audio);
 
   return [
     "-nostdin",
@@ -102,6 +106,7 @@ export function buildClipArgs(options: {
     // pick a 4:4:4 or 10-bit profile that many decoders reject.
     "-pix_fmt",
     "yuv420p",
+    ...(audioFilter ? ["-af", audioFilter] : []),
     "-c:a",
     "aac",
     "-b:a",
