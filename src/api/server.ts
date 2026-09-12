@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { newJobId, runJob, type CaptionMode, type JobStore } from "../jobs/index.ts";
+import { newJobId, runJob, type CaptionMode, type JobQueue, type JobStore } from "../jobs/index.ts";
 import { resolveExtension } from "../ingest/index.ts";
 import type { ClipSelector } from "../select/index.ts";
 import type { StorageAdapter } from "../storage/index.ts";
@@ -27,6 +27,11 @@ const JOB_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
 export interface ApiDependencies {
   storage: StorageAdapter;
   store: JobStore;
+  /**
+   * Bounds concurrent pipeline runs. Without one, every upload starts an
+   * ffmpeg encode the moment it lands and they compete for the same cores.
+   */
+  queue: JobQueue;
   transcriber: Transcriber;
   selector: ClipSelector;
   targetClipCount?: number;
@@ -104,21 +109,24 @@ async function handleCreateJob(
   const jobId = newJobId();
   const job = await deps.store.create({ id: jobId, filename });
 
-  // The pipeline is not awaited: the client gets a job ID immediately and polls
-  // for status. runJob records its own failures, so nothing can reject here.
-  void runJob({
-    jobId,
-    filename,
-    source: createReadStream(uploadPath),
-    storage: deps.storage,
-    store: deps.store,
-    transcriber: deps.transcriber,
-    selector: deps.selector,
-    ...(deps.targetClipCount === undefined ? {} : { targetClipCount: deps.targetClipCount }),
-    ...(deps.maxDurationSeconds === undefined ? {} : { maxDurationSeconds: deps.maxDurationSeconds }),
-    ...(deps.captionMode === undefined ? {} : { captionMode: deps.captionMode }),
-    ...(deps.autoFrame === undefined ? {} : { autoFrame: deps.autoFrame }),
-  }).finally(() => rm(staging, { recursive: true, force: true }));
+  // Queued, not started: the client gets a job ID immediately and polls for
+  // status, while the queue decides when the work actually runs. The job sits
+  // at "queued" until then, which is exactly what that status means.
+  await deps.queue.enqueue(() =>
+    runJob({
+      jobId,
+      filename,
+      source: createReadStream(uploadPath),
+      storage: deps.storage,
+      store: deps.store,
+      transcriber: deps.transcriber,
+      selector: deps.selector,
+      ...(deps.targetClipCount === undefined ? {} : { targetClipCount: deps.targetClipCount }),
+      ...(deps.maxDurationSeconds === undefined ? {} : { maxDurationSeconds: deps.maxDurationSeconds }),
+      ...(deps.captionMode === undefined ? {} : { captionMode: deps.captionMode }),
+      ...(deps.autoFrame === undefined ? {} : { autoFrame: deps.autoFrame }),
+    }).finally(() => rm(staging, { recursive: true, force: true })),
+  );
 
   sendJson(response, 202, job);
 }

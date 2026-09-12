@@ -1,5 +1,6 @@
 export * from "./types.ts";
 export { runJob, captionsEnabled, type CaptionMode, type RunJobOptions } from "./pipeline.ts";
+export * from "./queue.ts";
 
 import { randomUUID } from "node:crypto";
 

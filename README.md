@@ -23,7 +23,7 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 - Burned-in captions from the transcript
 - Loudness normalisation to -14 LUFS, with optional denoise
 - Optional motion-driven auto-framing of the crop window
-- Job orchestration with per-stage status
+- Job orchestration with per-stage status and bounded concurrency
 - HTTP API with range-request playback
 - Mobile web starter
 - 9:16 rendering

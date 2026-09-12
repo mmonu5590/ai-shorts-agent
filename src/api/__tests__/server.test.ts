@@ -7,7 +7,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { createTestVideo } from "../../media/__tests__/fixtures.ts";
 import { ffmpegAvailable } from "../../media/ffmpeg.ts";
-import { InMemoryJobStore } from "../../jobs/index.ts";
+import { InMemoryJobStore, InProcessJobQueue } from "../../jobs/index.ts";
 import { HeuristicClipSelector } from "../../select/index.ts";
 import { LocalStorage } from "../../storage/index.ts";
 import { StubTranscriber } from "../../transcribe/index.ts";
@@ -53,6 +53,7 @@ describe("API", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
     server = createApiServer({
       storage: new LocalStorage({ rootDir: path.join(dir, "storage") }),
       store: new InMemoryJobStore(),
+      queue: new InProcessJobQueue({ concurrency: 2 }),
       transcriber: new StubTranscriber({ segmentSeconds: 3 }),
       selector: new HeuristicClipSelector({ targetDurationSeconds: 5 }),
     });

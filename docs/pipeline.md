@@ -125,3 +125,35 @@ issuing range requests; without this they refetch whole files.
 watch the stages advance, play the Shorts inline. It polls once a second —
 the pipeline reports at stage granularity, so a socket would add complexity for
 latency nobody can see.
+
+## Concurrency
+
+Every upload used to start its pipeline run the moment it landed. Rendering is
+CPU-bound — each clip is an ffmpeg encode, and ffmpeg will use every core it is
+given — so ten uploads became ten concurrent encodes competing for the same
+cores, and **every one of them finished later than if they had been run in
+sequence**.
+
+Uploads now go through a `JobQueue`. `InProcessJobQueue` is the single-process
+implementation; `RENDER_CONCURRENCY` sets the limit, defaulting to 1.
+
+```
+t=2s   A=rendering   B=queued
+t=6s   A=complete    B=rendering
+t=10s  A=complete    B=complete
+```
+
+A job sits at `queued` until the queue starts it, which is exactly what that
+status already meant — the web client's stage list needed no change.
+
+A task that rejects is caught and reported rather than stalling the queue or
+reaching the event loop as an unhandled rejection. `drain()` waits for
+everything accepted so far, including work still behind the limit.
+
+### What this is not
+
+This queue lives in one process's memory. It does not survive a restart and
+does not span workers — a job accepted and not yet started is lost if the
+process dies, exactly like `InMemoryJobStore`. A Redis-backed implementation of
+the same interface is what fixes that, and it is the roadmap item this is a
+step toward, not a replacement for.

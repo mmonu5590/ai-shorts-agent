@@ -2,7 +2,7 @@
  * Server entry point.
  */
 
-import { InMemoryJobStore, type CaptionMode } from "../jobs/index.ts";
+import { InMemoryJobStore, InProcessJobQueue, type CaptionMode } from "../jobs/index.ts";
 import { createClipSelector } from "../select/index.ts";
 import { createStorage } from "../storage/index.ts";
 import { createTranscriber } from "../transcribe/index.ts";
@@ -14,6 +14,9 @@ export function startServer(port = Number(process.env["PORT"] ?? 3000)) {
   const server = createApiServer({
     storage: createStorage(),
     store: new InMemoryJobStore(),
+    queue: new InProcessJobQueue({
+      concurrency: Number(process.env["RENDER_CONCURRENCY"] ?? 1),
+    }),
     transcriber: createTranscriber(),
     selector: createClipSelector(),
     ...(process.env["MAX_VIDEO_SECONDS"]
