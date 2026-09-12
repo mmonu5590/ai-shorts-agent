@@ -103,3 +103,55 @@ absence in uploads forces ingest to stage files on disk.
 `-ss` precedes `-i` so ffmpeg seeks before decoding instead of decoding and
 discarding everything up to the cut. Because the clip is re-encoded anyway, the
 seek stays frame-accurate.
+
+## Captions
+
+Most Shorts are watched with the sound off, so the transcript is burned into
+the frame rather than left in a JSON file.
+
+```ts
+await renderPlan({
+  plan,
+  storage,
+  sourceKey,
+  transcript,
+  captions: { enabled: true },
+});
+```
+
+Cues are cut to the clip's range and rebased to clip-relative time. A cue that
+straddles a boundary is **trimmed, not dropped** — the words falling inside the
+clip are the ones the viewer hears. With word timings, cues are grouped into
+short lines (5 words or 3 seconds, whichever comes first); without them, whole
+transcript segments become cues, which is coarser but still beats nothing.
+
+### `CAPTIONS=auto` will not caption stub output
+
+`auto` (the default) turns captions on **unless the transcript came from the
+stub transcriber**. The stub emits `[untranscribed audio 0.0s-15.0s]`
+placeholders; burning those across every Short reads as a bug to a viewer, and
+no captions is the better failure. `CAPTIONS=on` and `CAPTIONS=off` override it.
+
+### Two things that break subtitle burn-in quietly
+
+**Filter-graph escaping.** Backslashes, colons and single quotes all terminate
+or reinterpret filter arguments, so a staging directory containing a colon
+silently builds the wrong graph. `escapeFilterPath` handles it, and a test
+renders through a path with a colon in it.
+
+**Font sizing.** libass renders SRT against a virtual canvas 288 units tall, so
+the ASS `FontSize` is a fraction of 288, not a pixel count. Passing a pixel
+value produces microscopic text. `fontSizeRatio` is expressed as a fraction of
+frame height and converted; `original_size` tells libass the real frame so the
+margins land correctly.
+
+The subtitles filter runs **after** scaling — libass draws at the final frame
+size, and captions applied before the scale would be resampled with the
+picture.
+
+### Verifying it actually rendered
+
+ffmpeg accepting a filter is not evidence that anything was drawn. The test
+renders the same clip with and without captions, decodes one frame of each as
+grayscale, and compares them pixel by pixel: the bottom band must change, and
+the upper half must be byte-identical.

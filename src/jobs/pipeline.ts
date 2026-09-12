@@ -19,6 +19,21 @@ import type { ClipSelector } from "../select/index.ts";
 import type { Transcriber } from "../transcribe/index.ts";
 import type { Job, JobStore } from "./types.ts";
 
+/**
+ * Whether to burn captions into the rendered Shorts.
+ *
+ * `auto` means yes, unless the transcript came from the stub transcriber —
+ * burning "[untranscribed audio 0.0s-15.0s]" across every Short looks like a
+ * bug to a viewer and would be worse than no captions at all.
+ */
+export type CaptionMode = "auto" | "on" | "off";
+
+export function captionsEnabled(mode: CaptionMode, provider: string): boolean {
+  if (mode === "off") return false;
+  if (mode === "on") return true;
+  return provider !== "stub";
+}
+
 export interface RunJobOptions {
   jobId: string;
   filename: string;
@@ -29,6 +44,8 @@ export interface RunJobOptions {
   selector: ClipSelector;
   targetClipCount?: number;
   maxDurationSeconds?: number;
+  /** Defaults to `auto`. */
+  captionMode?: CaptionMode;
 }
 
 /** Serialises a value into storage as pretty-printed JSON. */
@@ -93,6 +110,10 @@ export async function runJob(options: RunJobOptions): Promise<Job> {
       plan,
       storage,
       sourceKey: ingested.keys.source,
+      transcript,
+      captions: {
+        enabled: captionsEnabled(options.captionMode ?? "auto", transcript.provider),
+      },
       onProgress: (completed, total) => {
         // Fire-and-forget: progress is advisory and must not stall rendering.
         void store.update(jobId, { progress: { completed, total } });

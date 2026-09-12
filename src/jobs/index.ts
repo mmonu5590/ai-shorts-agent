@@ -1,5 +1,5 @@
 export * from "./types.ts";
-export { runJob, type RunJobOptions } from "./pipeline.ts";
+export { runJob, captionsEnabled, type CaptionMode, type RunJobOptions } from "./pipeline.ts";
 
 /** Job IDs are URL path segments and storage prefixes, so keep them simple. */
 export function newJobId(): string {

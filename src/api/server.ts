@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { newJobId, runJob, type JobStore } from "../jobs/index.ts";
+import { newJobId, runJob, type CaptionMode, type JobStore } from "../jobs/index.ts";
 import { resolveExtension } from "../ingest/index.ts";
 import type { ClipSelector } from "../select/index.ts";
 import type { StorageAdapter } from "../storage/index.ts";
@@ -31,6 +31,7 @@ export interface ApiDependencies {
   selector: ClipSelector;
   targetClipCount?: number;
   maxDurationSeconds?: number;
+  captionMode?: CaptionMode;
 }
 
 function sendJson(response: http.ServerResponse, status: number, body: unknown): void {
@@ -114,6 +115,7 @@ async function handleCreateJob(
     selector: deps.selector,
     ...(deps.targetClipCount === undefined ? {} : { targetClipCount: deps.targetClipCount }),
     ...(deps.maxDurationSeconds === undefined ? {} : { maxDurationSeconds: deps.maxDurationSeconds }),
+    ...(deps.captionMode === undefined ? {} : { captionMode: deps.captionMode }),
   }).finally(() => rm(staging, { recursive: true, force: true }));
 
   sendJson(response, 202, job);

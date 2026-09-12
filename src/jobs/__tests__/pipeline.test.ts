@@ -10,7 +10,7 @@ import { ffmpegAvailable } from "../../media/ffmpeg.ts";
 import { HeuristicClipSelector } from "../../select/index.ts";
 import { LocalStorage, jobKeys } from "../../storage/index.ts";
 import { StubTranscriber } from "../../transcribe/index.ts";
-import { InMemoryJobStore, runJob } from "../index.ts";
+import { InMemoryJobStore, captionsEnabled, runJob } from "../index.ts";
 
 const hasFfmpeg = await ffmpegAvailable();
 
@@ -105,5 +105,22 @@ describe("runJob", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
 
     assert.equal(job.status, "failed");
     assert.match(job.error ?? "", /Unsupported file type/u);
+  });
+});
+
+describe("captionsEnabled", () => {
+  it("never captions stub output under auto", () => {
+    // Burning "[untranscribed audio 0.0s-15.0s]" across every Short reads as a
+    // bug to a viewer; no captions is the better failure.
+    assert.equal(captionsEnabled("auto", "stub"), false);
+  });
+
+  it("captions real transcripts under auto", () => {
+    assert.equal(captionsEnabled("auto", "deepgram"), true);
+  });
+
+  it("honours an explicit choice over the stub heuristic", () => {
+    assert.equal(captionsEnabled("on", "stub"), true);
+    assert.equal(captionsEnabled("off", "deepgram"), false);
   });
 });

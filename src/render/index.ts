@@ -8,7 +8,7 @@
  */
 
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -16,7 +16,19 @@ import { ffmpegBinary, run } from "../media/ffmpeg.ts";
 import { probeVideo } from "../media/probe.ts";
 import { type Clip, type EditPlan, type OutputSpec, DEFAULT_OUTPUT } from "../plan/types.ts";
 import { type StorageAdapter, jobKeys } from "../storage/index.ts";
+import type { Transcript } from "../transcribe/types.ts";
+import {
+  type CaptionStyle,
+  type CueOptions,
+  DEFAULT_CAPTION_STYLE,
+  buildSubtitlesFilter,
+  clipCues,
+  toSrt,
+} from "./captions.ts";
 import { buildClipArgs } from "./filters.ts";
+
+export * from "./captions.ts";
+export { buildClipArgs, buildVerticalFilter } from "./filters.ts";
 
 /** Raised when ffmpeg reported success but produced nothing usable. */
 export class RenderError extends Error {
@@ -34,12 +46,23 @@ export interface RenderClipOptions {
   outputPath: string;
   clip: Clip;
   spec?: OutputSpec;
+  /** Path to an SRT file to burn into the frame. */
+  subtitlesPath?: string;
+  captionStyle?: CaptionStyle;
 }
 
 /** Renders one clip from a local source file to a local output file. */
 export async function renderClip(options: RenderClipOptions): Promise<void> {
   const spec = options.spec ?? DEFAULT_OUTPUT;
   const { clip } = options;
+
+  const overlayFilter = options.subtitlesPath
+    ? buildSubtitlesFilter(
+        options.subtitlesPath,
+        options.captionStyle ?? DEFAULT_CAPTION_STYLE,
+        spec.height,
+      )
+    : undefined;
 
   await run(
     ffmpegBinary(),
@@ -50,6 +73,7 @@ export async function renderClip(options: RenderClipOptions): Promise<void> {
       duration: clip.end - clip.start,
       framing: clip.framing,
       spec,
+      overlayFilter,
     }),
   );
 
@@ -79,6 +103,12 @@ export interface RenderedShort {
   sizeBytes: number;
 }
 
+export interface CaptionSettings {
+  enabled: boolean;
+  style?: CaptionStyle;
+  cues?: CueOptions;
+}
+
 export interface RenderPlanOptions {
   plan: EditPlan;
   storage: StorageAdapter;
@@ -88,6 +118,9 @@ export interface RenderPlanOptions {
   workDir?: string;
   /** Called after each clip, for job progress reporting. */
   onProgress?: (completed: number, total: number) => void;
+  /** Source of caption text. Captions are skipped without it. */
+  transcript?: Transcript;
+  captions?: CaptionSettings;
 }
 
 export interface RenderPlanResult {
@@ -112,10 +145,31 @@ export async function renderPlan(options: RenderPlanOptions): Promise<RenderPlan
   try {
     await pipeline(await storage.get(sourceKey), createWriteStream(localSource));
 
+    const captionsOn = Boolean(options.captions?.enabled && options.transcript);
+
     const shorts: RenderedShort[] = [];
     for (const [index, clip] of plan.clips.entries()) {
       const outputPath = path.join(stagingRoot, `clip-${index + 1}.mp4`);
-      await renderClip({ inputPath: localSource, outputPath, clip, spec });
+
+      // An empty SRT makes libass draw nothing but still costs a filter pass,
+      // so the filter is only added when there is something to show.
+      let subtitlesPath: string | undefined;
+      if (captionsOn) {
+        const srt = toSrt(clipCues(options.transcript as Transcript, clip, options.captions?.cues ?? {}));
+        if (srt.length > 0) {
+          subtitlesPath = path.join(stagingRoot, `clip-${index + 1}.srt`);
+          await writeFile(subtitlesPath, srt, "utf8");
+        }
+      }
+
+      await renderClip({
+        inputPath: localSource,
+        outputPath,
+        clip,
+        spec,
+        ...(subtitlesPath ? { subtitlesPath } : {}),
+        ...(options.captions?.style ? { captionStyle: options.captions.style } : {}),
+      });
 
       const key = jobKeys.short(plan.jobId, index + 1);
       const { size } = await stat(outputPath);

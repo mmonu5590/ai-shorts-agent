@@ -20,6 +20,7 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 - Ingest stage: upload validation, ffprobe metadata, audio extraction
 - Validated edit plan schema (the AI/FFmpeg contract)
 - Deterministic 9:16 rendering with crop or pad framing
+- Burned-in captions from the transcript
 - Job orchestration with per-stage status
 - HTTP API with range-request playback
 - Mobile web starter

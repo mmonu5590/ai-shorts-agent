@@ -67,8 +67,17 @@ export function buildClipArgs(options: {
   duration: number;
   framing: Framing | undefined;
   spec: OutputSpec;
+  /**
+   * Filter appended after framing, used to burn in captions. It has to run
+   * last: libass draws at the final frame size, so subtitles applied before
+   * the scale would be resampled along with the picture.
+   */
+  overlayFilter?: string | undefined;
 }): string[] {
   const { inputPath, outputPath, start, duration, framing, spec } = options;
+  const videoFilter = [buildVerticalFilter(framing, spec), options.overlayFilter]
+    .filter((part): part is string => Boolean(part))
+    .join(",");
 
   return [
     "-nostdin",
@@ -80,7 +89,7 @@ export function buildClipArgs(options: {
     "-t",
     num(duration),
     "-vf",
-    buildVerticalFilter(framing, spec),
+    videoFilter,
     "-r",
     String(spec.frameRate),
     "-c:v",
