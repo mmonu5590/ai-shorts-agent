@@ -8,7 +8,7 @@ import { ffmpegAvailable } from "../../media/ffmpeg.ts";
 import { probeVideo } from "../../media/probe.ts";
 import { type EditPlan, type OutputSpec, DEFAULT_OUTPUT, EDIT_PLAN_VERSION } from "../../plan/types.ts";
 import { LocalStorage } from "../../storage/index.ts";
-import { RenderError, renderClip, renderPlan } from "../index.ts";
+import { type FrameAnalyzer, RenderError, renderClip, renderPlan } from "../index.ts";
 
 const hasFfmpeg = await ffmpegAvailable();
 
@@ -186,5 +186,78 @@ describe("renderPlan", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () 
 
     const { readdir } = await import("node:fs/promises");
     assert.deepEqual(await readdir(workDir), [], "staging directory should be empty after a failure");
+  });
+});
+
+describe("renderPlan auto-framing", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
+  let dir: string;
+  let storage: LocalStorage;
+  let sourceKey: string;
+
+  before(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "render-autoframe-"));
+    storage = new LocalStorage({ rootDir: path.join(dir, "storage") });
+    const source = path.join(dir, "source.mp4");
+    await createTestVideo(source, { durationSeconds: 6, width: 640, height: 360 });
+    sourceKey = "jobs/job-af/source.mp4";
+    const { createReadStream } = await import("node:fs");
+    await storage.put(sourceKey, createReadStream(source), { contentType: "video/mp4" });
+  });
+
+  after(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Records what it was asked and answers with a fixed position. */
+  function recordingAnalyzer(answer: number | null) {
+    const calls: { clipId: string; targetAspect: number }[] = [];
+    const analyzer: FrameAnalyzer = {
+      name: "recording",
+      async analyze(_videoPath, clip, targetAspect) {
+        calls.push({ clipId: clip.id, targetAspect });
+        return answer;
+      },
+    };
+    return { analyzer, calls };
+  }
+
+  const planFor = (framing?: { mode: "crop" | "pad"; centerX?: number }): EditPlan => ({
+    version: EDIT_PLAN_VERSION,
+    jobId: "job-af",
+    sourceDuration: 6,
+    clips: [{ id: "a", start: 0, end: 3, ...(framing ? { framing } : {}) }],
+  });
+
+  it("asks the analyzer once per crop clip, with the output aspect", async () => {
+    const { analyzer, calls } = recordingAnalyzer(0.8);
+
+    await renderPlan({ plan: planFor({ mode: "crop", centerX: 0.5 }), storage, sourceKey, spec: SPEC, autoFrame: analyzer });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.clipId, "a");
+    assert.ok(Math.abs((calls[0]?.targetAspect as number) - SPEC.width / SPEC.height) < 1e-9);
+  });
+
+  it("skips pad clips, which use the whole frame anyway", async () => {
+    const { analyzer, calls } = recordingAnalyzer(0.8);
+
+    await renderPlan({ plan: planFor({ mode: "pad" }), storage, sourceKey, spec: SPEC, autoFrame: analyzer });
+
+    assert.deepEqual(calls, []);
+  });
+
+  it("keeps the plan's framing when the analyzer declines", async () => {
+    // null means no usable signal; replacing centerX then would be a guess.
+    const { analyzer } = recordingAnalyzer(null);
+
+    const result = await renderPlan({
+      plan: planFor({ mode: "crop", centerX: 0.2 }),
+      storage,
+      sourceKey,
+      spec: SPEC,
+      autoFrame: analyzer,
+    });
+
+    assert.equal(result.shorts.length, 1);
   });
 });

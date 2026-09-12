@@ -13,7 +13,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline as streamPipeline } from "node:stream/promises";
 import { ingestVideo } from "../ingest/index.ts";
-import { renderPlan } from "../render/index.ts";
+import { MotionFrameAnalyzer, renderPlan } from "../render/index.ts";
 import { type StorageAdapter, jobKeys } from "../storage/index.ts";
 import type { ClipSelector } from "../select/index.ts";
 import type { Transcriber } from "../transcribe/index.ts";
@@ -46,6 +46,14 @@ export interface RunJobOptions {
   maxDurationSeconds?: number;
   /** Defaults to `auto`. */
   captionMode?: CaptionMode;
+  /**
+   * Choose the crop window from the picture rather than the plan.
+   *
+   * Off by default. Motion is good evidence of where the subject is, but not
+   * proof: a still speaker in front of a busy background loses to the
+   * background. Worth enabling when the footage is mostly static shots.
+   */
+  autoFrame?: boolean;
 }
 
 /** Serialises a value into storage as pretty-printed JSON. */
@@ -114,6 +122,7 @@ export async function runJob(options: RunJobOptions): Promise<Job> {
       captions: {
         enabled: captionsEnabled(options.captionMode ?? "auto", transcript.provider),
       },
+      ...(options.autoFrame ? { autoFrame: new MotionFrameAnalyzer() } : {}),
       onProgress: (completed, total) => {
         // Fire-and-forget: progress is advisory and must not stall rendering.
         void store.update(jobId, { progress: { completed, total } });

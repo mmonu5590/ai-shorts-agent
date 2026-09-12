@@ -26,9 +26,11 @@ import {
   toSrt,
 } from "./captions.ts";
 import { type AudioProcessing, DEFAULT_AUDIO } from "./audio.ts";
+import type { FrameAnalyzer } from "./autoframe.ts";
 import { buildClipArgs } from "./filters.ts";
 
 export * from "./audio.ts";
+export * from "./autoframe.ts";
 export * from "./captions.ts";
 export { buildClipArgs, buildVerticalFilter } from "./filters.ts";
 
@@ -128,6 +130,14 @@ export interface RenderPlanOptions {
   captions?: CaptionSettings;
   /** Audio conditioning for every clip. Pass null to leave audio untouched. */
   audio?: AudioProcessing | null;
+  /**
+   * Chooses the crop window per clip, overriding the plan's `centerX`.
+   *
+   * The plan's value is the selector's guess from a transcript; the analyzer
+   * looks at the actual picture, so when both are present the picture wins.
+   * Only applies to crop framing — `pad` keeps the whole frame anyway.
+   */
+  autoFrame?: FrameAnalyzer | null;
 }
 
 export interface RenderPlanResult {
@@ -154,9 +164,21 @@ export async function renderPlan(options: RenderPlanOptions): Promise<RenderPlan
 
     const captionsOn = Boolean(options.captions?.enabled && options.transcript);
 
+    const targetAspect = spec.width / spec.height;
+
     const shorts: RenderedShort[] = [];
-    for (const [index, clip] of plan.clips.entries()) {
+    for (const [index, rawClip] of plan.clips.entries()) {
       const outputPath = path.join(stagingRoot, `clip-${index + 1}.mp4`);
+
+      let clip = rawClip;
+      if (options.autoFrame && (clip.framing?.mode ?? "crop") === "crop") {
+        const centerX = await options.autoFrame.analyze(localSource, clip, targetAspect);
+        // null means the analyzer found nothing to go on, so the plan's value
+        // stands rather than being replaced by a fabricated one.
+        if (centerX !== null) {
+          clip = { ...clip, framing: { mode: "crop", centerX } };
+        }
+      }
 
       // An empty SRT makes libass draw nothing but still costs a filter pass,
       // so the filter is only added when there is something to show.

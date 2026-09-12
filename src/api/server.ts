@@ -32,6 +32,7 @@ export interface ApiDependencies {
   targetClipCount?: number;
   maxDurationSeconds?: number;
   captionMode?: CaptionMode;
+  autoFrame?: boolean;
 }
 
 function sendJson(response: http.ServerResponse, status: number, body: unknown): void {
@@ -116,6 +117,7 @@ async function handleCreateJob(
     ...(deps.targetClipCount === undefined ? {} : { targetClipCount: deps.targetClipCount }),
     ...(deps.maxDurationSeconds === undefined ? {} : { maxDurationSeconds: deps.maxDurationSeconds }),
     ...(deps.captionMode === undefined ? {} : { captionMode: deps.captionMode }),
+    ...(deps.autoFrame === undefined ? {} : { autoFrame: deps.autoFrame }),
   }).finally(() => rm(staging, { recursive: true, force: true }));
 
   sendJson(response, 202, job);

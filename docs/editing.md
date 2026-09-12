@@ -192,3 +192,36 @@ Matching the first `I:` in stderr reports silence for every file — which is
 exactly what the first version of this test did, and it would have passed
 happily against a filter chain that did nothing. The helper parses the
 `Integrated loudness:` summary block the filter prints at the end.
+
+## Auto-framing
+
+`centerX` decides where the 9:16 window sits in a wider frame. A centred crop
+is right only when the subject is centred; when a speaker stands to one side,
+the default throws away the half that matters.
+
+`FrameAnalyzer` picks that position. `MotionFrameAnalyzer` is the default
+implementation and needs no model: it samples the clip small and in grayscale,
+scores each column by how much it changes between frames, and slides a window
+of the target width to find the busiest run.
+
+```ts
+await renderPlan({ plan, storage, sourceKey, autoFrame: new MotionFrameAnalyzer() });
+```
+
+**It is off by default, and that is a judgement call rather than caution.**
+Motion is good evidence of where the subject is, but not proof — a still
+speaker in front of a busy background loses to the background. Enable it
+(`AUTO_FRAME=true`) when the footage is mostly static shots, where it clearly
+beats a fixed centre.
+
+The analyzer returns `null` rather than a position in two cases: a still frame,
+where every window scores alike, and a source already narrower than the target,
+where there is no horizontal choice to make. `renderPlan` then keeps whatever
+the plan said, so declining is always safe.
+
+When both the plan and the analyzer have an opinion, the analyzer wins for crop
+clips. The selector's `centerX` is a guess from a transcript with no visual
+input at all; the analyzer has looked at the pixels.
+
+A face detector can replace `MotionFrameAnalyzer` behind the same interface
+without touching the render path — that is what the interface is for.

@@ -22,6 +22,7 @@ export function startServer(port = Number(process.env["PORT"] ?? 3000)) {
     ...(process.env["CAPTIONS"]
       ? { captionMode: process.env["CAPTIONS"] as CaptionMode }
       : {}),
+    ...(process.env["AUTO_FRAME"] === "true" ? { autoFrame: true } : {}),
   });
 
   server.listen(port, () => {
