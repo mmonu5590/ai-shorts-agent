@@ -34,6 +34,8 @@ export interface Job {
   id: string;
   status: JobStatus;
   filename: string;
+  /** Principal that created the job. Everything about it is scoped to them. */
+  ownerId: string;
   createdAt: string;
   updatedAt: string;
   metadata?: VideoMetadata;
@@ -45,10 +47,11 @@ export interface Job {
 }
 
 export interface JobStore {
-  create(job: Pick<Job, "id" | "filename">): Promise<Job>;
+  create(job: Pick<Job, "id" | "filename" | "ownerId">): Promise<Job>;
   get(id: string): Promise<Job | null>;
-  update(id: string, patch: Partial<Omit<Job, "id" | "createdAt">>): Promise<Job>;
-  list(): Promise<Job[]>;
+  update(id: string, patch: Partial<Omit<Job, "id" | "createdAt" | "ownerId">>): Promise<Job>;
+  /** Only the given principal's jobs. There is no unscoped listing. */
+  list(ownerId: string): Promise<Job[]>;
 }
 
 export class JobNotFoundError extends Error {
@@ -68,7 +71,7 @@ export class JobNotFoundError extends Error {
 export class InMemoryJobStore implements JobStore {
   readonly #jobs = new Map<string, Job>();
 
-  async create(job: Pick<Job, "id" | "filename">): Promise<Job> {
+  async create(job: Pick<Job, "id" | "filename" | "ownerId">): Promise<Job> {
     const now = new Date().toISOString();
     const created: Job = { ...job, status: "queued", createdAt: now, updatedAt: now };
     this.#jobs.set(created.id, created);
@@ -79,7 +82,7 @@ export class InMemoryJobStore implements JobStore {
     return this.#jobs.get(id) ?? null;
   }
 
-  async update(id: string, patch: Partial<Omit<Job, "id" | "createdAt">>): Promise<Job> {
+  async update(id: string, patch: Partial<Omit<Job, "id" | "createdAt" | "ownerId">>): Promise<Job> {
     const existing = this.#jobs.get(id);
     if (!existing) {
       throw new JobNotFoundError(id);
@@ -89,7 +92,9 @@ export class InMemoryJobStore implements JobStore {
     return updated;
   }
 
-  async list(): Promise<Job[]> {
-    return [...this.#jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async list(ownerId: string): Promise<Job[]> {
+    return [...this.#jobs.values()]
+      .filter((job) => job.ownerId === ownerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 }

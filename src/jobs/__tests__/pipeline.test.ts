@@ -41,7 +41,7 @@ describe("runJob", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
 
   it("carries a job from upload to rendered Shorts", async () => {
     const shared = deps();
-    await shared.store.create({ id: "job-p1", filename: "input.mp4" });
+    await shared.store.create({ id: "job-p1", filename: "input.mp4", ownerId: "tester" });
 
     const job = await runJob({
       jobId: "job-p1",
@@ -59,7 +59,7 @@ describe("runJob", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
 
   it("leaves every stage's output in the job prefix", async () => {
     const shared = deps();
-    await shared.store.create({ id: "job-p2", filename: "input.mp4" });
+    await shared.store.create({ id: "job-p2", filename: "input.mp4", ownerId: "tester" });
 
     await runJob({ jobId: "job-p2", filename: "input.mp4", source: createReadStream(source), ...shared });
 
@@ -79,7 +79,7 @@ describe("runJob", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
   it("records a failure on the job instead of throwing", async () => {
     // A background caller has nowhere to catch, so runJob must never reject.
     const shared = deps();
-    await shared.store.create({ id: "job-p3", filename: "notes.mp4" });
+    await shared.store.create({ id: "job-p3", filename: "notes.mp4", ownerId: "tester" });
 
     const job = await runJob({
       jobId: "job-p3",
@@ -94,7 +94,7 @@ describe("runJob", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
 
   it("rejects an unsupported container at the ingest stage", async () => {
     const shared = deps();
-    await shared.store.create({ id: "job-p4", filename: "clip.avi" });
+    await shared.store.create({ id: "job-p4", filename: "clip.avi", ownerId: "tester" });
 
     const job = await runJob({
       jobId: "job-p4",

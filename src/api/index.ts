@@ -2,6 +2,7 @@
  * Server entry point.
  */
 
+import { createAuthenticator } from "../auth/index.ts";
 import { InMemoryJobStore, InProcessJobQueue, type CaptionMode } from "../jobs/index.ts";
 import { createClipSelector } from "../select/index.ts";
 import { createStorage } from "../storage/index.ts";
@@ -10,10 +11,16 @@ import { createApiServer } from "./server.ts";
 
 export { createApiServer, type ApiDependencies } from "./server.ts";
 
-export function startServer(port = Number(process.env["PORT"] ?? 3000)) {
+export function startServer(
+  port = Number(process.env["PORT"] ?? 3000),
+  // Loopback by default: an unauthenticated prototype should not be reachable
+  // from the network just because nobody set a variable.
+  host = process.env["HOST"] ?? "127.0.0.1",
+) {
   const server = createApiServer({
     storage: createStorage(),
     store: new InMemoryJobStore(),
+    authenticator: createAuthenticator(host),
     queue: new InProcessJobQueue({
       concurrency: Number(process.env["RENDER_CONCURRENCY"] ?? 1),
     }),
@@ -28,8 +35,8 @@ export function startServer(port = Number(process.env["PORT"] ?? 3000)) {
     ...(process.env["AUTO_FRAME"] === "true" ? { autoFrame: true } : {}),
   });
 
-  server.listen(port, () => {
-    console.log(`ai-shorts-agent listening on http://localhost:${port}`);
+  server.listen(port, host, () => {
+    console.log(`ai-shorts-agent listening on http://${host}:${port}`);
   });
   return server;
 }

@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+import type { Authenticator, Principal } from "../auth/index.ts";
 import { newJobId, runJob, type CaptionMode, type JobQueue, type JobStore } from "../jobs/index.ts";
 import { resolveExtension } from "../ingest/index.ts";
 import type { ClipSelector } from "../select/index.ts";
@@ -32,6 +33,8 @@ export interface ApiDependencies {
    * ffmpeg encode the moment it lands and they compete for the same cores.
    */
   queue: JobQueue;
+  /** Identifies the caller. Every job is scoped to the principal it returns. */
+  authenticator: Authenticator;
   transcriber: Transcriber;
   selector: ClipSelector;
   targetClipCount?: number;
@@ -76,6 +79,7 @@ async function handleCreateJob(
   response: http.ServerResponse,
   url: URL,
   deps: ApiDependencies,
+  principal: Principal,
 ): Promise<void> {
   const filename = url.searchParams.get("filename");
   if (!filename) {
@@ -107,7 +111,7 @@ async function handleCreateJob(
   }
 
   const jobId = newJobId();
-  const job = await deps.store.create({ id: jobId, filename });
+  const job = await deps.store.create({ id: jobId, filename, ownerId: principal.id });
 
   // Queued, not started: the client gets a job ID immediately and polls for
   // status, while the queue decides when the work actually runs. The job sits
@@ -137,7 +141,18 @@ async function handleShort(
   jobId: string,
   index: number,
   deps: ApiDependencies,
+  principal: Principal,
 ): Promise<void> {
+  // Checked against the store rather than the storage key: a rendered Short is
+  // the most sensitive thing here, and its key is guessable from a job id.
+  const job = await deps.store.get(jobId);
+  if (!job || job.ownerId !== principal.id) {
+    // 404 rather than 403, so a probe cannot tell a job that is not theirs
+    // from one that does not exist.
+    sendJson(response, 404, { error: `No rendered Short ${index} for job ${jobId}` });
+    return;
+  }
+
   const key = jobKeys.short(jobId, index);
   const stored = await deps.storage.stat(key);
   if (!stored) {
@@ -189,12 +204,19 @@ export function createApiServer(deps: ApiDependencies): http.Server {
         }
 
         if (segments[0] === "api" && segments[1] === "jobs") {
+          const principal = await deps.authenticator.authenticate(request);
+          if (!principal) {
+            response.setHeader("WWW-Authenticate", 'Bearer realm="ai-shorts-agent"');
+            sendJson(response, 401, { error: "Authentication required" });
+            return;
+          }
+
           if (request.method === "POST" && segments.length === 2) {
-            await handleCreateJob(request, response, url, deps);
+            await handleCreateJob(request, response, url, deps, principal);
             return;
           }
           if (request.method === "GET" && segments.length === 2) {
-            sendJson(response, 200, { jobs: await deps.store.list() });
+            sendJson(response, 200, { jobs: await deps.store.list(principal.id) });
             return;
           }
 
@@ -206,7 +228,7 @@ export function createApiServer(deps: ApiDependencies): http.Server {
 
           if (request.method === "GET" && segments.length === 3 && jobId) {
             const job = await deps.store.get(jobId);
-            if (!job) {
+            if (!job || job.ownerId !== principal.id) {
               sendJson(response, 404, { error: `No job with id "${jobId}"` });
               return;
             }
@@ -220,7 +242,7 @@ export function createApiServer(deps: ApiDependencies): http.Server {
               sendJson(response, 400, { error: "Short index must be a positive integer" });
               return;
             }
-            await handleShort(request, response, jobId, index, deps);
+            await handleShort(request, response, jobId, index, deps, principal);
             return;
           }
         }

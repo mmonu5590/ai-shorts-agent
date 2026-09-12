@@ -7,6 +7,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { createTestVideo } from "../../media/__tests__/fixtures.ts";
 import { ffmpegAvailable } from "../../media/ffmpeg.ts";
+import { AnonymousAuthenticator, StaticTokenAuthenticator } from "../../auth/index.ts";
 import { InMemoryJobStore, InProcessJobQueue } from "../../jobs/index.ts";
 import { HeuristicClipSelector } from "../../select/index.ts";
 import { LocalStorage } from "../../storage/index.ts";
@@ -54,6 +55,7 @@ describe("API", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
       storage: new LocalStorage({ rootDir: path.join(dir, "storage") }),
       store: new InMemoryJobStore(),
       queue: new InProcessJobQueue({ concurrency: 2 }),
+      authenticator: new AnonymousAuthenticator(),
       transcriber: new StubTranscriber({ segmentSeconds: 3 }),
       selector: new HeuristicClipSelector({ targetDurationSeconds: 5 }),
     });
@@ -164,5 +166,126 @@ describe("API", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
         "jobs should be newest first",
       );
     }
+  });
+});
+
+describe("authentication and tenant isolation", { skip: hasFfmpeg ? false : "ffmpeg not installed" }, () => {
+  const ALICE = "alice-token-long-enough";
+  const BOB = "bob-token-long-enough-too";
+
+  let dir: string;
+  let server: ReturnType<typeof createApiServer>;
+  let base: string;
+  let video: Buffer;
+
+  before(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "api-auth-"));
+    const source = path.join(dir, "source.mp4");
+    await createTestVideo(source, { durationSeconds: 6, width: 640, height: 360 });
+    video = await readFile(source);
+
+    server = createApiServer({
+      storage: new LocalStorage({ rootDir: path.join(dir, "storage") }),
+      store: new InMemoryJobStore(),
+      queue: new InProcessJobQueue({ concurrency: 2 }),
+      authenticator: new StaticTokenAuthenticator({
+        tokens: new Map([
+          [ALICE, "alice"],
+          [BOB, "bob"],
+        ]),
+      }),
+      transcriber: new StubTranscriber({ segmentSeconds: 3 }),
+      selector: new HeuristicClipSelector({ targetDurationSeconds: 5 }),
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const asUser = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+  /** Uploads as `token` and polls until the job settles. */
+  async function uploadAs(token: string, filename: string) {
+    const created = await fetch(`${base}/api/jobs?filename=${filename}`, {
+      method: "POST",
+      headers: asUser(token),
+      body: video,
+    });
+    assert.equal(created.status, 202);
+    const { id } = (await created.json()) as { id: string };
+
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const response = await fetch(`${base}/api/jobs/${id}`, { headers: asUser(token) });
+      const job = (await response.json()) as { status: string; error?: string };
+      if (job.status === "complete" || job.status === "failed") return { id, ...job };
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error("job did not settle in time");
+  }
+
+  it("rejects every job route without a credential", async () => {
+    for (const url of [`${base}/api/jobs`, `${base}/api/jobs/whatever`]) {
+      const response = await fetch(url);
+      assert.equal(response.status, 401, url);
+      assert.match(response.headers.get("www-authenticate") ?? "", /^Bearer /u);
+    }
+
+    const upload = await fetch(`${base}/api/jobs?filename=x.mp4`, { method: "POST", body: video });
+    assert.equal(upload.status, 401);
+  });
+
+  it("still serves the web client without a credential", async () => {
+    assert.equal((await fetch(base)).status, 200);
+  });
+
+  it("rejects a well-formed but wrong token", async () => {
+    const response = await fetch(`${base}/api/jobs`, {
+      headers: { Authorization: "Bearer not-a-real-token-but-long" },
+    });
+    assert.equal(response.status, 401);
+  });
+
+  it("shows each principal only their own jobs", async () => {
+    const alice = await uploadAs(ALICE, "alice.mp4");
+    const bob = await uploadAs(BOB, "bob.mp4");
+    assert.equal(alice.status, "complete", alice.error ?? "");
+    assert.equal(bob.status, "complete", bob.error ?? "");
+
+    const listed = await fetch(`${base}/api/jobs`, { headers: asUser(ALICE) });
+    const { jobs } = (await listed.json()) as { jobs: { id: string }[] };
+
+    assert.ok(jobs.some((job) => job.id === alice.id), "alice should see her own job");
+    assert.ok(!jobs.some((job) => job.id === bob.id), "alice must not see bob's job");
+  });
+
+  it("hides another principal's job as 404, not 403", async () => {
+    const bob = await uploadAs(BOB, "bob2.mp4");
+
+    const response = await fetch(`${base}/api/jobs/${bob.id}`, { headers: asUser(ALICE) });
+
+    // 403 would confirm the id exists; 404 leaves a prober no better off.
+    assert.equal(response.status, 404);
+  });
+
+  it("refuses to stream another principal's rendered Short", async () => {
+    const bob = await uploadAs(BOB, "bob3.mp4");
+
+    // Bob can fetch his own.
+    const owner = await fetch(`${base}/api/jobs/${bob.id}/shorts/1`, { headers: asUser(BOB) });
+    assert.equal(owner.status, 200);
+
+    // Alice, holding the exact job id, cannot.
+    const other = await fetch(`${base}/api/jobs/${bob.id}/shorts/1`, { headers: asUser(ALICE) });
+    assert.equal(other.status, 404);
+
+    // Nor can an unauthenticated caller.
+    assert.equal((await fetch(`${base}/api/jobs/${bob.id}/shorts/1`)).status, 401);
   });
 });

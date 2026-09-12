@@ -24,6 +24,7 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 - Loudness normalisation to -14 LUFS, with optional denoise
 - Optional motion-driven auto-framing of the crop window
 - Job orchestration with per-stage status and bounded concurrency
+- Bearer-token authentication with per-principal job isolation
 - HTTP API with range-request playback
 - Mobile web starter
 - 9:16 rendering
@@ -34,7 +35,8 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 
 Add real transcription/LLM/TTS providers, Redis queue, Supabase auth/database, face tracking, captions, audio isolation, AI narration, B-roll, billing and publishing.
 
-Docs: [the pipeline](docs/pipeline.md), [storage](docs/storage.md),
+Docs: [the pipeline](docs/pipeline.md), [authentication](docs/auth.md),
+[storage](docs/storage.md),
 [ingest](docs/ingest.md), [edit plans and rendering](docs/editing.md).
 
 ## Important Notes

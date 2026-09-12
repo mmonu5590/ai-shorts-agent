@@ -118,6 +118,31 @@
       ];
 
       const el = (id) => document.getElementById(id);
+
+      /**
+       * Bearer token for a server running AUTH=token.
+       *
+       * Read from localStorage so a deployment can set it once without this
+       * page growing a sign-in flow it has no opinions about yet. Access is
+       * guarded: a private window can throw on the property itself.
+       */
+      function authHeaders() {
+        try {
+          const token = window.localStorage.getItem("shortsToken");
+          return token ? { Authorization: `Bearer ${token}` } : {};
+        } catch {
+          return {};
+        }
+      }
+
+      /** Turns a 401 into something actionable rather than a bare status code. */
+      function describe(response, body) {
+        if (response.status === 401) {
+          return "This server requires a token. Set one with localStorage.setItem('shortsToken', '<token>') and reload.";
+        }
+        return body?.error ?? `Request failed (${response.status})`;
+      }
+
       const fileInput = el("file");
       const uploadButton = el("upload");
       const errorBox = el("error");
@@ -166,6 +191,9 @@
           ...(job.shorts ?? []).map((short) => {
             const figure = document.createElement("figure");
             const video = document.createElement("video");
+            // A <video src> cannot carry an Authorization header, so under
+            // token auth this needs a cookie session or a short-lived signed
+            // URL. Left as-is until the auth model is settled.
             video.src = `/api/jobs/${job.id}/shorts/${short.index}`;
             video.controls = true;
             video.preload = "metadata";
@@ -183,8 +211,10 @@
         // Polling rather than a socket: the pipeline reports at stage
         // granularity, so a second of latency is invisible to the user.
         for (;;) {
-          const response = await fetch(`/api/jobs/${jobId}`);
-          if (!response.ok) throw new Error(`Status check failed (${response.status})`);
+          const response = await fetch(`/api/jobs/${jobId}`, { headers: authHeaders() });
+          if (!response.ok) {
+            throw new Error(describe(response, await response.json().catch(() => null)));
+          }
           const job = await response.json();
 
           renderStages(job.status, job.progress);
@@ -206,10 +236,11 @@
         try {
           const response = await fetch(`/api/jobs?filename=${encodeURIComponent(chosen.name)}`, {
             method: "POST",
+            headers: authHeaders(),
             body: chosen,
           });
-          const job = await response.json();
-          if (!response.ok) throw new Error(job.error ?? `Upload failed (${response.status})`);
+          const job = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(describe(response, job));
           await poll(job.id);
         } catch (error) {
           showError(error instanceof Error ? error.message : String(error));
