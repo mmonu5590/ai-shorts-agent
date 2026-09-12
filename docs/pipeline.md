@@ -30,20 +30,36 @@ web client and you get rendered Shorts back.
 | Stage | Module | Needs credentials |
 | --- | --- | --- |
 | Ingest | `src/ingest` | No (ffmpeg) |
-| Transcribe | `src/transcribe` | Depends on provider |
+| Transcribe | `src/transcribe` | Only for `deepgram` |
 | Select | `src/select` | Only for `claude` |
 | Render | `src/render` | No (ffmpeg) |
 
 ### Transcription
 
 `Transcriber` is the provider-neutral interface; `Transcript` is the shape the
-rest of the pipeline sees. Only `StubTranscriber` ships today — it measures the
-audio and emits evenly spaced placeholder segments.
+rest of the pipeline sees.
 
-**That is deliberately useless for real clip selection.** It exists so the
-wiring can run and be tested without a provider. Real selection needs a real
-ASR provider: implement `Transcriber` against its API and add a case to
-`createTranscriber`. Nothing downstream changes.
+| Transcriber | `TRANSCRIBER` | Behaviour |
+| --- | --- | --- |
+| Stub | `stub` (default) | Measures the audio and emits evenly spaced placeholder segments. No credentials. |
+| Deepgram | `deepgram` | Real transcription with sentence-level timings. Needs `DEEPGRAM_API_KEY`. |
+
+**The stub is deliberately useless for real clip selection.** It exists so the
+wiring can run and be tested without a provider — the placeholder text says so
+in as many words. Selecting genuinely good moments needs `deepgram` or another
+real provider.
+
+The Deepgram adapter requests `utterances=true`, because clip selection needs
+sentence boundaries with timings; one undifferentiated blob of text has no cut
+points in it. Word text prefers `punctuated_word` over the raw token, and words
+with no timings are dropped rather than turned into NaN spans.
+
+The audio is streamed to the API rather than buffered, with `Content-Length`
+taken from `stat` — an hour of 16 kHz mono PCM is about 115 MB, which should
+not sit in memory just to be counted.
+
+Adding another provider means implementing `Transcriber` against its API and
+adding a case to `createTranscriber`. Nothing downstream changes.
 
 ### Clip selection
 

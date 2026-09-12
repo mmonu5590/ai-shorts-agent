@@ -16,6 +16,7 @@ The AI produces an edit plan; FFmpeg performs deterministic rendering.
 - Provider-neutral transcription interface
 - Provider-neutral LLM clip-selection interface
 - Provider-neutral storage interface (local filesystem or Google Drive)
+- Transcription via Deepgram, or a credential-free stub
 - Ingest stage: upload validation, ffprobe metadata, audio extraction
 - Validated edit plan schema (the AI/FFmpeg contract)
 - Deterministic 9:16 rendering with crop or pad framing
